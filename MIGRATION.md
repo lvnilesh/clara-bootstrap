@@ -45,7 +45,7 @@ age -d -i ~/.config/age/keys.txt ~/mynix/secrets/clara-docker-config.json.age \
 Without this, containers using private-registry images (coursebook) will
 fail to pull on the new clara.
 
-### 5. Deploy keys for private repos
+### 4. Deploy keys for private repos
 
 From your admin machine (surf):
 
@@ -70,7 +70,7 @@ done
 
 (Repositories under `beacloudgenius` — same command but different owner slug.)
 
-### 4. Rsync stateful data from old clara
+### 5. Rsync stateful data from old clara
 
 ```bash
 OLDIP=<old-clara-ip>
