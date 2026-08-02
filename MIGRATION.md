@@ -30,7 +30,22 @@ SSH keys from https://github.com/lvnilesh.keys.
 Log out, log back in as `cloudgenius@new-clara-ip`. Confirm docker + nginx
 run.
 
-### 3. Deploy keys for private repos
+### 3. Restore docker registry credentials
+
+Some containers pull from a private registry (`reg.home.cloudgeni.us` — home
+registry for coursebook builds) and push to Docker Hub. Restore the docker
+auth config to the new clara:
+
+```bash
+NEWIP=<new-clara-ip>
+age -d -i ~/.config/age/keys.txt ~/mynix/secrets/clara-docker-config.json.age \
+  | ssh cloudgenius@$NEWIP 'umask 077; mkdir -p ~/.docker && cat > ~/.docker/config.json && chmod 600 ~/.docker/config.json'
+```
+
+Without this, containers using private-registry images (coursebook) will
+fail to pull on the new clara.
+
+### 5. Deploy keys for private repos
 
 From your admin machine (surf):
 
@@ -82,7 +97,7 @@ ssh cloudgenius@$NEWIP 'sudo chown -R 1000:1000 ~/src/authentik-clara/{data,cert
 ssh cloudgenius@$NEWIP 'sudo chown -R 70:70 ~/src/authentik-clara/database'
 ```
 
-### 5. Trigger workflow deploys
+### 6. Trigger workflow deploys
 
 ```bash
 for repo in clara-cloudflared clara-nginx authentik-clara pangolin-clara; do
@@ -95,7 +110,7 @@ Watch runs:
 gh run watch -R lvnilesh/clara-cloudflared
 ```
 
-### 6. Update DNS
+### 7. Update DNS
 
 Only two hostnames actually pointing at clara's IP directly:
 
@@ -107,7 +122,7 @@ gh api -X PUT /zones/<ZONE_ID>/dns_records/<clara.cloudgeni.us record ID> ...
 # once cloudflared runs there).
 ```
 
-### 7. Open cloud firewall
+### 8. Open cloud firewall
 
 Whatever your new cloud's mechanism:
 
@@ -123,7 +138,7 @@ For Azure: NSG → Networking → Inbound rules.
 For Hetzner: Cloud Console → firewall.
 For DigitalOcean: cloud firewall or ufw.
 
-### 8. Shut down old clara
+### 9. Shut down old clara
 
 Verify new clara is answering:
 ```bash
