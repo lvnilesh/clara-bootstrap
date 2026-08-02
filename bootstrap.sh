@@ -21,6 +21,12 @@
 #   • CF Tunnel credentials (deployed by clara-cloudflared workflow via GH Secret)
 #   • Deploy keys for private repos (generated per-repo, see MIGRATION.md)
 #   • Container data restoration (rsync from old clara, see MIGRATION.md)
+#
+# Env overrides:
+#   CLARA_HOSTNAME    — hostname to set (default: clara)
+#   CLOUDGENIUS_SSH_KEYS — admin authorized_keys (default: fetched from github.com/lvnilesh.keys)
+#   RUNNER_SSH_KEYS      — GH Actions runner keys (appended to authorized_keys)
+#   CLARA_IGNOREIP       — space-separated CIDRs to exempt from fail2ban
 #   • Firewall/NSG rules (cloud-specific — see MIGRATION.md)
 
 set -euo pipefail
@@ -32,8 +38,8 @@ fi
 
 log() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 
-log "1/9  hostname → clara"
-hostnamectl set-hostname clara
+log "1/9  hostname → ${CLARA_HOSTNAME:-clara}"
+hostnamectl set-hostname "${CLARA_HOSTNAME:-clara}"
 
 log "2/9  apt update + upgrade"
 export DEBIAN_FRONTEND=noninteractive
@@ -93,6 +99,11 @@ if [[ -n "$KEYS" ]]; then
   chmod 600 /home/cloudgenius/.ssh/authorized_keys
   echo "  planted $(echo "$KEYS" | wc -l) key(s)"
 fi
+# GH Actions runner keys (one per repo runner) so workflows can ssh cloudgenius@clara
+if [[ -n "${RUNNER_SSH_KEYS:-}" ]]; then
+  echo "$RUNNER_SSH_KEYS" >> /home/cloudgenius/.ssh/authorized_keys
+  echo "  planted $(echo "$RUNNER_SSH_KEYS" | wc -l) runner key(s)"
+fi
 
 log "8/9  install clara fail2ban jail config"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
@@ -113,6 +124,18 @@ else
   chmod 0644 /etc/fail2ban/jail.d/00-clara.conf
   systemctl enable --now fail2ban
   systemctl reload fail2ban 2>/dev/null || systemctl restart fail2ban
+fi
+
+
+# CLARA_IGNOREIP: space-separated CIDRs to exempt from fail2ban.
+# Example: CLARA_IGNOREIP="192.168.1.0/24 73.221.218.159/32"
+if [[ -n "${CLARA_IGNOREIP:-}" ]]; then
+  cat > /etc/fail2ban/jail.d/01-ignoreip.conf <<IPCFG
+[DEFAULT]
+ignoreip = 127.0.0.1/8 ::1 ${CLARA_IGNOREIP}
+IPCFG
+  systemctl reload fail2ban 2>/dev/null || systemctl restart fail2ban
+  echo "  ignoreip set: ${CLARA_IGNOREIP}"
 fi
 
 log "9/9  prep ~/src for repo clones"
