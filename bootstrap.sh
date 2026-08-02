@@ -44,7 +44,7 @@ log "3/9  install baseline packages"
 apt-get install -y \
   curl wget ca-certificates gnupg lsb-release \
   git python3 python3-pip jq \
-  docker.io docker-compose-plugin \
+  docker.io docker-compose-v2 \
   nginx \
   fail2ban \
   ufw
