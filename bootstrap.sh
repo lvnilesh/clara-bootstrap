@@ -38,6 +38,54 @@ fi
 
 log() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 
+# --- Preflight: refuse to run if the target uid 1000 user is currently logged in ---
+# `usermod -l` renames the account, and it fails hard ("user X is currently used
+# by process Y") if the user is logged in (e.g. you SSH'd in as `azureuser` on
+# Azure or `ubuntu` elsewhere and are now running this script under sudo).
+# Remedies:
+#   1. Run from cloud-init runcmd (list form, so it uses bash — see README).
+#   2. `az vm run-command invoke` / `hcloud server ssh` after boot but before
+#      the default user has an active SSH session.
+#   3. Set CLARA_ALLOW_KILL_USER_1000=1 and this script will `loginctl
+#      terminate-user` + `pkill -KILL -u` on uid 1000 first (destroys your SSH
+#      session — you'll need out-of-band console access to re-connect).
+DEFAULT_USER_NAME=$(getent passwd 1000 | cut -d: -f1 || true)
+if [[ -n "$DEFAULT_USER_NAME" && "$DEFAULT_USER_NAME" != "cloudgenius" ]]; then
+  if pgrep -u 1000 >/dev/null 2>&1; then
+    if [[ "${CLARA_ALLOW_KILL_USER_1000:-}" == "1" ]]; then
+      log "PREFLIGHT: killing all processes for uid 1000 ($DEFAULT_USER_NAME) — will drop your SSH session"
+      loginctl terminate-user 1000 2>/dev/null || true
+      pkill -KILL -u 1000 2>/dev/null || true
+      sleep 2
+    else
+      cat >&2 <<PREFLIGHT_ERR
+
+ERROR: uid 1000 ($DEFAULT_USER_NAME) has active processes — cannot rename to cloudgenius.
+
+If you SSH'd in as $DEFAULT_USER_NAME and are running this via sudo, usermod -l
+will fail. Choose one of:
+
+  (a) Run from cloud-init BEFORE any user logs in. Use runcmd list form so
+      the script is invoked with bash (not dash):
+
+        #cloud-config
+        runcmd:
+          - [bash, -c, "curl -fsSL https://raw.githubusercontent.com/lvnilesh/clara-bootstrap/main/bootstrap.sh | bash"]
+
+  (b) Run via out-of-band execution after boot, e.g. on Azure:
+        az vm run-command invoke -g <RG> -n <VM> --command-id RunShellScript \
+          --scripts "curl -fsSL https://raw.githubusercontent.com/lvnilesh/clara-bootstrap/main/bootstrap.sh | bash"
+
+  (c) Force this script to kill uid 1000's sessions first (loses your SSH):
+        CLARA_ALLOW_KILL_USER_1000=1 bash bootstrap.sh
+      Then reconnect via cloud console / OOB to finish install.
+
+PREFLIGHT_ERR
+      exit 1
+    fi
+  fi
+fi
+
 log "1/9  hostname → ${CLARA_HOSTNAME:-clara}"
 hostnamectl set-hostname "${CLARA_HOSTNAME:-clara}"
 
