@@ -11,22 +11,29 @@
 #
 # What this DOES:
 #   • sets hostname to `clara`
-#   • installs docker, docker-compose plugin, nginx, cloudflared, git, jq, python3
+#   • installs docker, docker-compose plugin, nginx, cloudflared, tailscale,
+#     restic, git, jq, python3
 #   • creates cloudgenius user (uid 1000, groups: sudo docker)
 #   • adds NOPASSWD sudo for cloudgenius
 #   • plants authorized_keys from CLOUDGENIUS_SSH_KEYS env or github.com/lvnilesh.keys
 #   • enables docker + nginx systemd
+#   • if CLARA_TAILSCALE_AUTHKEY set: joins tailnet with --accept-routes so
+#     home-LAN DNS (.cg.home.arpa) resolves via pfSense subnet router
 #
 # What this does NOT do:
 #   • CF Tunnel credentials (deployed by clara-cloudflared workflow via GH Secret)
 #   • Deploy keys for private repos (generated per-repo, see MIGRATION.md)
-#   • Container data restoration (rsync from old clara, see MIGRATION.md)
+#   • Container data restoration (hydrate via lvnilesh/clara-restic hydrate.yml)
+#   • truenas_backup ssh key (generated + installed by clara-restic deploy.yml)
 #
 # Env overrides:
-#   CLARA_HOSTNAME    — hostname to set (default: clara)
-#   CLOUDGENIUS_SSH_KEYS — admin authorized_keys (default: fetched from github.com/lvnilesh.keys)
-#   RUNNER_SSH_KEYS      — GH Actions runner keys (appended to authorized_keys)
-#   CLARA_IGNOREIP       — space-separated CIDRs to exempt from fail2ban
+#   CLARA_HOSTNAME           — hostname to set (default: clara)
+#   CLOUDGENIUS_SSH_KEYS     — admin authorized_keys (default: fetched from github.com/lvnilesh.keys)
+#   RUNNER_SSH_KEYS          — GH Actions runner keys (appended to authorized_keys)
+#   CLARA_IGNOREIP           — space-separated CIDRs to exempt from fail2ban
+#   CLARA_TAILSCALE_AUTHKEY  — reusable tailscale auth key (from agenix
+#                              secrets/clara-tailscale-authkey.age). Required
+#                              for home-LAN reachability (restic → TrueNAS).
 #   • Firewall/NSG rules (cloud-specific — see MIGRATION.md)
 
 set -euo pipefail
@@ -101,7 +108,8 @@ apt-get install -y \
   docker.io docker-compose-v2 \
   nginx \
   fail2ban \
-  ufw
+  ufw \
+  restic
 
 systemctl enable --now docker
 systemctl enable --now nginx
@@ -114,6 +122,11 @@ if ! command -v cloudflared >/dev/null; then
     | tee /etc/apt/sources.list.d/cloudflared.list
   apt-get update -y
   apt-get install -y cloudflared
+fi
+
+log "4b/9  install tailscale"
+if ! command -v tailscale >/dev/null; then
+  curl -fsSL https://tailscale.com/install.sh | sh
 fi
 
 log "5/9  create cloudgenius user (uid 1000)"
@@ -189,6 +202,22 @@ fi
 log "9/9  prep ~/src for repo clones"
 sudo -u cloudgenius mkdir -p /home/cloudgenius/src
 
+# CLARA_TAILSCALE_AUTHKEY: reusable auth key from mynix agenix
+# (secrets/clara-tailscale-authkey.age). If set, brings the node up on the
+# tailnet with --accept-routes so home-LAN DNS (.cg.home.arpa) resolves via
+# pfSense subnet router. Required for restic-to-truenas SFTP and any other
+# home-LAN service reachability.
+if [[ -n "${CLARA_TAILSCALE_AUTHKEY:-}" ]]; then
+  log "9b/9  tailscale up (accept-routes, ssh, hostname=${CLARA_HOSTNAME:-clara})"
+  tailscale up \
+    --authkey "$CLARA_TAILSCALE_AUTHKEY" \
+    --hostname "${CLARA_HOSTNAME:-clara}" \
+    --accept-routes \
+    --ssh
+  sleep 2
+  tailscale status --self=false 2>/dev/null | head -3 || true
+fi
+
 log "DONE. Next steps (from surf or admin machine):"
 cat <<NEXT
 
@@ -203,6 +232,7 @@ cat <<NEXT
     ssh cloudgenius@<new-clara-ip> "cat >> ~/.ssh/config" <<CFG
 Host github-\$repo
   HostName github.com
+  User git
   IdentityFile ~/.ssh/\${repo//-/_}_deploy_key
   IdentitiesOnly yes
 CFG
