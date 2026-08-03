@@ -34,6 +34,9 @@
 #   CLARA_TAILSCALE_AUTHKEY  — reusable tailscale auth key (from agenix
 #                              secrets/clara-tailscale-authkey.age). Required
 #                              for home-LAN reachability (restic → TrueNAS).
+#   CLARA_DOCKER_CONFIG_B64  — base64 of ~/.docker/config.json (from agenix
+#                              secrets/clara-docker-config.json.age). Required
+#                              for coursebook's private-registry pull.
 #   • Firewall/NSG rules (cloud-specific — see MIGRATION.md)
 
 set -euo pipefail
@@ -164,6 +167,17 @@ fi
 if [[ -n "${RUNNER_SSH_KEYS:-}" ]]; then
   echo "$RUNNER_SSH_KEYS" >> /home/cloudgenius/.ssh/authorized_keys
   echo "  planted $(echo "$RUNNER_SSH_KEYS" | wc -l) runner key(s)"
+fi
+
+# CLARA_DOCKER_CONFIG_B64: base64-encoded ~/.docker/config.json (from mynix
+# agenix secrets/clara-docker-config.json.age). Restores auth for the private
+# registry (reg.home.cloudgeni.us used by coursebook image pulls). Without
+# this, coursebook-deploy fails on the first container pull.
+if [[ -n "${CLARA_DOCKER_CONFIG_B64:-}" ]]; then
+  sudo -u cloudgenius mkdir -p /home/cloudgenius/.docker
+  printf %s "$CLARA_DOCKER_CONFIG_B64" | tr -d '\r\n\t ' | base64 -d \
+    | install -m 0600 -o cloudgenius -g cloudgenius /dev/stdin /home/cloudgenius/.docker/config.json
+  echo "  planted ~/.docker/config.json"
 fi
 
 log "8/9  install clara fail2ban jail config"
