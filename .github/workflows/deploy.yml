@@ -1,0 +1,21 @@
+name: Reconcile Clara host
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - bootstrap.sh
+      - scripts/reconcile-host.sh
+      - .github/workflows/deploy.yml
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Enforce network-only Tailscale
+        run: |
+          ssh -o StrictHostKeyChecking=no cloudgenius@clara 'sudo bash -s' \
+            < scripts/reconcile-host.sh

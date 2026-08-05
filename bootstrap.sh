@@ -17,8 +17,8 @@
 #   • adds NOPASSWD sudo for cloudgenius
 #   • plants authorized_keys from CLOUDGENIUS_SSH_KEYS env or github.com/lvnilesh.keys
 #   • enables docker + nginx systemd
-#   • if CLARA_TAILSCALE_AUTHKEY set: joins tailnet with --accept-routes so
-#     home-LAN DNS (.cg.home.arpa) resolves via pfSense subnet router
+#   • if CLARA_TAILSCALE_AUTHKEY set: joins tailnet with --accept-routes and
+#     Tailscale SSH disabled, leaving port 22 to the system OpenSSH server
 #
 # What this does NOT do:
 #   • CF Tunnel credentials (deployed by clara-cloudflared workflow via GH Secret)
@@ -222,12 +222,12 @@ sudo -u cloudgenius mkdir -p /home/cloudgenius/src
 # pfSense subnet router. Required for restic-to-truenas SFTP and any other
 # home-LAN service reachability.
 if [[ -n "${CLARA_TAILSCALE_AUTHKEY:-}" ]]; then
-  log "9b/9  tailscale up (accept-routes, ssh, hostname=${CLARA_HOSTNAME:-clara})"
+  log "9b/9  tailscale up (accept-routes, OpenSSH, hostname=${CLARA_HOSTNAME:-clara})"
   tailscale up \
     --authkey "$CLARA_TAILSCALE_AUTHKEY" \
     --hostname "${CLARA_HOSTNAME:-clara}" \
     --accept-routes \
-    --ssh
+    --ssh=false
   sleep 2
   tailscale status --self=false 2>/dev/null | head -3 || true
 fi
