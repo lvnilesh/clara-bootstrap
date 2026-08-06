@@ -63,13 +63,14 @@ fi
 printf 'vm.swappiness=%s\n' "$swappiness" > /etc/sysctl.d/60-clara-swap.conf
 sysctl -q -w "vm.swappiness=$swappiness"
 
-actual_bytes=$(swapon --bytes --noheadings --raw --show=NAME,SIZE \
+actual_file_bytes=$(stat -c %s "$swap_file")
+active_swap_bytes=$(swapon --bytes --noheadings --raw --show=NAME,SIZE \
   | awk -v swap_file="$swap_file" '$1 == swap_file { print $2 }')
-if [[ $actual_bytes != "$desired_bytes" ]]; then
-  printf 'Swap reconciliation failed: expected=%s actual=%s\n' \
-    "$desired_bytes" "${actual_bytes:-absent}" >&2
+if [[ $actual_file_bytes != "$desired_bytes" || -z $active_swap_bytes ]]; then
+  printf 'Swap reconciliation failed: expected_file=%s actual_file=%s active_swap=%s\n' \
+    "$desired_bytes" "$actual_file_bytes" "${active_swap_bytes:-absent}" >&2
   exit 1
 fi
 
-printf 'Swap reconciled: file=%s size_gib=%s swappiness=%s\n' \
-  "$swap_file" "$swap_size_gib" "$swappiness"
+printf 'Swap reconciled: file=%s size_gib=%s active_bytes=%s swappiness=%s\n' \
+  "$swap_file" "$swap_size_gib" "$active_swap_bytes" "$swappiness"

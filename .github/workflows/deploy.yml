@@ -179,7 +179,7 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
             clara \
-            "sudo test \"\$(swapon --bytes --noheadings --raw --show=NAME,SIZE | awk -v file='$swap_file' '\$1 == file { print \$2 }')\" -eq $((swap_size_gib * 1024 * 1024 * 1024)) && test \"\$(sysctl -n vm.swappiness)\" -eq '$swappiness'"
+            "sudo test \"\$(stat -c %s '$swap_file')\" -eq $((swap_size_gib * 1024 * 1024 * 1024)) && sudo swapon --noheadings --raw --show=NAME | grep -Fxq '$swap_file' && test \"\$(sysctl -n vm.swappiness)\" -eq '$swappiness'"
 
       - name: Log out of Azure
         if: always()
