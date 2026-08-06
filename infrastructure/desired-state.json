@@ -1,0 +1,12 @@
+{
+  "azure": {
+    "resourceGroup": "RG-CLARA",
+    "vmName": "clara",
+    "vmSize": "Standard_B2ms"
+  },
+  "host": {
+    "swapFile": "/swapfile",
+    "swapSizeGiB": 2,
+    "swappiness": 10
+  }
+}

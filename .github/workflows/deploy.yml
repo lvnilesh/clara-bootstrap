@@ -1,21 +1,189 @@
-name: Reconcile Clara host
+name: Reconcile Clara infrastructure
 
 on:
   push:
     branches: [main]
     paths:
       - bootstrap.sh
+      - infrastructure/desired-state.json
+      - scripts/configure-swap.sh
       - scripts/reconcile-host.sh
       - .github/workflows/deploy.yml
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: clara-infrastructure
+  cancel-in-progress: false
+
 jobs:
-  deploy:
-    runs-on: self-hosted
+  reconcile:
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 30
+
     steps:
       - uses: actions/checkout@v5
 
-      - name: Enforce network-only Tailscale
+      - name: Prepare isolated Azure configuration
         run: |
-          ssh -o StrictHostKeyChecking=no cloudgenius@clara 'sudo bash -s' \
+          azure_config_dir="$RUNNER_TEMP/azure-clara-bootstrap"
+          rm -rf "$azure_config_dir"
+          install -d -m 0700 "$azure_config_dir"
+          printf 'AZURE_CONFIG_DIR=%s\n' "$azure_config_dir" >> "$GITHUB_ENV"
+
+      - name: Prepare dedicated Clara SSH identity
+        env:
+          CLARA_SSH_PRIVATE_KEY: ${{ secrets.CLARA_SSH_PRIVATE_KEY }}
+        run: |
+          ssh_key="$RUNNER_TEMP/clara-bootstrap-actions-key"
+          install -m 0600 /dev/null "$ssh_key"
+          printf '%s\n' "$CLARA_SSH_PRIVATE_KEY" > "$ssh_key"
+          ssh-keygen -y -f "$ssh_key" > "$ssh_key.pub"
+          expected=$(ssh-keygen -lf keys/clara-bootstrap-actions.pub | awk '{ print $2 }')
+          actual=$(ssh-keygen -lf "$ssh_key.pub" | awk '{ print $2 }')
+          [[ $actual == "$expected" ]]
+          printf 'CLARA_SSH_KEY=%s\n' "$ssh_key" >> "$GITHUB_ENV"
+
+      - name: Validate desired state
+        run: |
+          jq -e '
+            .azure.resourceGroup == "RG-CLARA" and
+            .azure.vmName == "clara" and
+            .azure.vmSize == "Standard_B2ms" and
+            (.host.swapFile | startswith("/")) and
+            (.host.swapSizeGiB | type == "number" and . > 0) and
+            (.host.swappiness | type == "number" and . >= 0 and . <= 100)
+          ' infrastructure/desired-state.json >/dev/null
+          bash -n scripts/configure-swap.sh scripts/reconcile-host.sh
+
+      - name: Install Azure CLI
+        run: |
+          if ! command -v az >/dev/null; then
+            curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+          fi
+          az version --output json >/dev/null
+
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Reconcile Azure VM size
+        id: vm
+        run: |
+          resource_group=$(jq -r '.azure.resourceGroup' infrastructure/desired-state.json)
+          vm_name=$(jq -r '.azure.vmName' infrastructure/desired-state.json)
+          target_size=$(jq -r '.azure.vmSize' infrastructure/desired-state.json)
+          current_size=$(az vm show \
+            --resource-group "$resource_group" \
+            --name "$vm_name" \
+            --query hardwareProfile.vmSize \
+            --output tsv)
+
+          if [[ $current_size != "$target_size" ]]; then
+            printf 'Resizing %s from %s to %s\n' "$vm_name" "$current_size" "$target_size"
+            az vm deallocate --resource-group "$resource_group" --name "$vm_name"
+            az vm resize \
+              --resource-group "$resource_group" \
+              --name "$vm_name" \
+              --size "$target_size"
+            az vm start --resource-group "$resource_group" --name "$vm_name"
+          fi
+
+          actual_size=$(az vm show \
+            --resource-group "$resource_group" \
+            --name "$vm_name" \
+            --query hardwareProfile.vmSize \
+            --output tsv)
+          [[ $actual_size == "$target_size" ]]
+
+          public_ip=$(az vm show \
+            --resource-group "$resource_group" \
+            --name "$vm_name" \
+            --show-details \
+            --query publicIps \
+            --output tsv)
+          [[ -n $public_ip ]]
+          printf 'public_ip=%s\n' "$public_ip" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for Clara SSH
+        env:
+          PUBLIC_IP: ${{ steps.vm.outputs.public_ip }}
+        run: |
+          for attempt in $(seq 1 60); do
+            if ssh \
+              -o HostName="$PUBLIC_IP" \
+              -o IdentitiesOnly=yes \
+              -i "$CLARA_SSH_KEY" \
+              -o BatchMode=yes \
+              -o ConnectTimeout=5 \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              clara true; then
+              exit 0
+            fi
+            printf 'SSH wait %s/60\n' "$attempt"
+            sleep 10
+          done
+          exit 1
+
+      - name: Reconcile Clara host
+        env:
+          PUBLIC_IP: ${{ steps.vm.outputs.public_ip }}
+        run: |
+          swap_file=$(jq -r '.host.swapFile' infrastructure/desired-state.json)
+          swap_size_gib=$(jq -r '.host.swapSizeGiB' infrastructure/desired-state.json)
+          swappiness=$(jq -r '.host.swappiness' infrastructure/desired-state.json)
+          ssh \
+            -o HostName="$PUBLIC_IP" \
+            -o IdentitiesOnly=yes \
+            -i "$CLARA_SSH_KEY" \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            clara \
+            "sudo CLARA_SWAP_FILE='$swap_file' CLARA_SWAP_SIZE_GIB='$swap_size_gib' CLARA_SWAPPINESS='$swappiness' bash -s" \
+            < scripts/configure-swap.sh
+          ssh \
+            -o HostName="$PUBLIC_IP" \
+            -o IdentitiesOnly=yes \
+            -i "$CLARA_SSH_KEY" \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            clara 'sudo bash -s' \
             < scripts/reconcile-host.sh
+
+      - name: Verify desired state
+        env:
+          PUBLIC_IP: ${{ steps.vm.outputs.public_ip }}
+        run: |
+          resource_group=$(jq -r '.azure.resourceGroup' infrastructure/desired-state.json)
+          vm_name=$(jq -r '.azure.vmName' infrastructure/desired-state.json)
+          target_size=$(jq -r '.azure.vmSize' infrastructure/desired-state.json)
+          swap_file=$(jq -r '.host.swapFile' infrastructure/desired-state.json)
+          swap_size_gib=$(jq -r '.host.swapSizeGiB' infrastructure/desired-state.json)
+          swappiness=$(jq -r '.host.swappiness' infrastructure/desired-state.json)
+
+          actual_size=$(az vm show \
+            --resource-group "$resource_group" \
+            --name "$vm_name" \
+            --query hardwareProfile.vmSize \
+            --output tsv)
+          [[ $actual_size == "$target_size" ]]
+
+          ssh \
+            -o HostName="$PUBLIC_IP" \
+            -o IdentitiesOnly=yes \
+            -i "$CLARA_SSH_KEY" \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            clara \
+            "sudo test \"\$(swapon --bytes --noheadings --raw --show=NAME,SIZE | awk -v file='$swap_file' '\$1 == file { print \$2 }')\" -eq $((swap_size_gib * 1024 * 1024 * 1024)) && test \"\$(sysctl -n vm.swappiness)\" -eq '$swappiness'"
+
+      - name: Log out of Azure
+        if: always()
+        run: |
+          az logout || true
+          rm -rf "$AZURE_CONFIG_DIR"
+          rm -f "${CLARA_SSH_KEY:-}" "${CLARA_SSH_KEY:-}.pub"

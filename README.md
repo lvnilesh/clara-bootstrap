@@ -12,8 +12,38 @@ On a fresh Ubuntu 24.04 VM (as root or via sudo):
 curl -fsSL https://raw.githubusercontent.com/lvnilesh/clara-bootstrap/main/bootstrap.sh | sudo bash
 ```
 
-That's it. About 5 minutes. Then follow [MIGRATION.md](./MIGRATION.md) for
+That's it. About 5 minutes. The bootstrap also creates a persistent 2 GiB
+swapfile with `vm.swappiness=10`. Then follow [MIGRATION.md](./MIGRATION.md) for
 the deploy-key + rsync steps.
+
+## Declarative Azure state
+
+[`infrastructure/desired-state.json`](./infrastructure/desired-state.json) owns
+the existing production Clara VM size and host memory policy:
+
+- Azure SKU: `Standard_B2ms` (2 vCPU, 8 GiB RAM)
+- swapfile: `/swapfile`, 2 GiB
+- swappiness: `10`
+
+The `Reconcile Clara infrastructure` GitHub Actions workflow runs on the
+separate `actions-runner` VM. A push that changes the desired state, bootstrap,
+or host-policy scripts makes it:
+
+1. log in to Azure and resize Clara only when the SKU differs;
+2. wait for Clara to return after the required deallocate/start cycle;
+3. reconcile swap and Tailscale/OpenSSH policy over SSH;
+4. verify the Azure SKU, active swap size, and swappiness.
+
+The workflow requires two repository secrets:
+
+- `AZURE_CREDENTIALS`: a service principal scoped to Clara's resource group
+  with the `Virtual Machine Contributor` role;
+- `CLARA_SSH_PRIVATE_KEY`: the private half matching
+  [`keys/clara-bootstrap-actions.pub`](./keys/clara-bootstrap-actions.pub).
+
+Recovery copies are encrypted in the `mynix` repository as
+`secrets/clara-azure-credentials.json.age` and
+`secrets/clara-bootstrap-actions-ssh.age`. Never commit either plaintext.
 
 ### Recommended: run from cloud-init before first SSH
 
@@ -70,19 +100,22 @@ rename. Re-connect as `cloudgenius@…` via the cloud console.
 
 ## What this repo is
 
-A single bash script + runbook, deliberately no fancy Ansible/Terraform. The
-philosophy: everything on clara is driven by GitHub Actions workflows on
-per-service repos ([clara-nginx](https://github.com/beacloudgenius/clara-nginx),
+A small bootstrap and desired-state repository, deliberately without a large
+configuration-management framework. Everything on Clara is driven by GitHub
+Actions workflows here and in per-service repos
+([clara-nginx](https://github.com/beacloudgenius/clara-nginx),
 [clara-cloudflared](https://github.com/lvnilesh/clara-cloudflared),
 [authentik-clara](https://github.com/lvnilesh/authentik-clara),
 [pangolin-clara](https://github.com/lvnilesh/pangolin-clara), etc.). This
-repo just gets the OS to the point where those workflows can take over.
+repo gets the OS ready and keeps the existing Azure VM size and core host policy
+converged.
 
 ## Not in scope
 
-- Cloud VM provisioning (use each cloud's own UI/CLI).
+- First-time cloud VM creation (use the `mynix` forklift script).
 - Firewall rules (cloud-specific — see MIGRATION.md).
-- Deploy keys, GH Secrets, DNS — handled by their respective repos.
+- Service deploy keys, service secrets, and DNS are handled by their respective
+  repositories.
 
 ## Cloud portability
 

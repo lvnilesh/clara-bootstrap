@@ -13,6 +13,7 @@
 #   • sets hostname to `clara`
 #   • installs docker, docker-compose plugin, nginx, cloudflared, tailscale,
 #     restic, git, jq, python3
+#   • creates a persistent 2 GiB swapfile with low swappiness
 #   • creates cloudgenius user (uid 1000, groups: sudo docker)
 #   • adds NOPASSWD sudo for cloudgenius
 #   • plants authorized_keys from CLOUDGENIUS_SSH_KEYS env or github.com/lvnilesh.keys
@@ -37,6 +38,8 @@
 #   CLARA_DOCKER_CONFIG_B64  — base64 of ~/.docker/config.json (from agenix
 #                              secrets/clara-docker-config.json.age). Required
 #                              for coursebook's private-registry pull.
+#   CLARA_SWAP_SIZE_GIB      — persistent swapfile size in GiB (default: 2)
+#   CLARA_SWAPPINESS         — Linux swappiness from 0 through 100 (default: 10)
 #   • Firewall/NSG rules (cloud-specific — see MIGRATION.md)
 
 set -euo pipefail
@@ -117,6 +120,16 @@ apt-get install -y \
 systemctl enable --now docker
 systemctl enable --now nginx
 
+log "3b/9  configure persistent swap"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
+if [[ -f "$SCRIPT_DIR/scripts/configure-swap.sh" ]]; then
+  bash "$SCRIPT_DIR/scripts/configure-swap.sh"
+else
+  curl -fsSL \
+    https://raw.githubusercontent.com/lvnilesh/clara-bootstrap/main/scripts/configure-swap.sh \
+    | bash
+fi
+
 log "4/9  install cloudflared"
 if ! command -v cloudflared >/dev/null; then
   mkdir -p /usr/share/keyrings
@@ -181,7 +194,6 @@ if [[ -n "${CLARA_DOCKER_CONFIG_B64:-}" ]]; then
 fi
 
 log "8/9  install clara fail2ban jail config"
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 if [ -f "$SCRIPT_DIR/etc/fail2ban/jail.d/00-clara.conf" ]; then
   install -m 0644 "$SCRIPT_DIR/etc/fail2ban/jail.d/00-clara.conf" /etc/fail2ban/jail.d/00-clara.conf
   systemctl enable --now fail2ban
