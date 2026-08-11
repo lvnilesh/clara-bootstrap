@@ -55,6 +55,8 @@ jobs:
             .azure.vmName == "clara" and
             .azure.vmSize == "Standard_B2ms" and
             (.azure.networkSecurityGroup | length > 0) and
+            (.azure.networkReconciler.principalObjectId | test("^[0-9a-f-]{36}$")) and
+            .azure.networkReconciler.role == "Network Contributor" and
             (.azure.inboundRules | length > 0) and
             ([.azure.inboundRules[].name] | unique | length) == (.azure.inboundRules | length) and
             ([.azure.inboundRules[].destinationPorts[] | select(. == "22" or . == "80" or . == "443")] | length) == 0 and

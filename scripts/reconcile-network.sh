@@ -4,6 +4,28 @@ set -euo pipefail
 desired_state=${1:-infrastructure/desired-state.json}
 resource_group=$(jq -r '.azure.resourceGroup' "$desired_state")
 nsg_name=$(jq -r '.azure.networkSecurityGroup' "$desired_state")
+principal_object_id=$(jq -r '.azure.networkReconciler.principalObjectId' "$desired_state")
+network_role=$(jq -r '.azure.networkReconciler.role' "$desired_state")
+nsg_scope=$(
+  az network nsg show \
+    --resource-group "$resource_group" \
+    --name "$nsg_name" \
+    --query id \
+    --output tsv
+)
+
+assignment_count=$(
+  az role assignment list \
+    --assignee-object-id "$principal_object_id" \
+    --scope "$nsg_scope" \
+    --query "[?roleDefinitionName=='$network_role'] | length(@)" \
+    --output tsv
+)
+if [[ $assignment_count != 1 ]]; then
+  printf 'Missing Azure role assignment: principal=%s role=%s scope=%s\n' \
+    "$principal_object_id" "$network_role" "$nsg_scope" >&2
+  exit 1
+fi
 
 mapfile -t desired_names < <(jq -r '.azure.inboundRules[].name' "$desired_state")
 mapfile -t current_names < <(

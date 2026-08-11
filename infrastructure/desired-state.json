@@ -4,6 +4,10 @@
     "vmName": "clara",
     "vmSize": "Standard_B2ms",
     "networkSecurityGroup": "claraNSG",
+    "networkReconciler": {
+      "principalObjectId": "7aa19e4d-d806-4339-a92a-671dc930f103",
+      "role": "Network Contributor"
+    },
     "inboundRules": [
       {
         "name": "gerbil-udp",
