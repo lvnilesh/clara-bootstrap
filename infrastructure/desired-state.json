@@ -2,9 +2,27 @@
   "azure": {
     "resourceGroup": "RG-CLARA",
     "vmName": "clara",
-    "vmSize": "Standard_B2ms"
+    "vmSize": "Standard_B2ms",
+    "networkSecurityGroup": "claraNSG",
+    "inboundRules": [
+      {
+        "name": "gerbil-udp",
+        "priority": 200,
+        "protocol": "Udp",
+        "source": "*",
+        "destinationPorts": ["21820", "51820"]
+      },
+      {
+        "name": "rtmp",
+        "priority": 1030,
+        "protocol": "Tcp",
+        "source": "73.221.218.159/32",
+        "destinationPorts": ["1935"]
+      }
+    ]
   },
   "host": {
+    "deploymentSshHost": "clara.tail52f7b.ts.net",
     "swapFile": "/swapfile",
     "swapSizeGiB": 2,
     "swappiness": 10
