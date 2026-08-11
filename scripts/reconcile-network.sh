@@ -78,7 +78,9 @@ actual=$(
         priority,
         protocol,
         source,
-        destinationPorts: ((.destinationPorts // [.destinationPort]) | sort)
+        destinationPorts: (
+          (if (.destinationPorts | length) > 0 then .destinationPorts else [.destinationPort] end) | sort
+        )
       }) | sort_by(.priority)
     '
 )
