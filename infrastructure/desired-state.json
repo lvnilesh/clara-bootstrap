@@ -27,6 +27,7 @@
   },
   "host": {
     "deploymentSshHost": "clara.tail52f7b.ts.net",
+    "rebootWhenRequired": true,
     "swapFile": "/swapfile",
     "swapSizeGiB": 2,
     "swappiness": 10

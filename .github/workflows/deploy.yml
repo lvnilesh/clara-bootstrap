@@ -61,6 +61,7 @@ jobs:
             ([.azure.inboundRules[].name] | unique | length) == (.azure.inboundRules | length) and
             ([.azure.inboundRules[].destinationPorts[] | select(. == "22" or . == "80" or . == "443")] | length) == 0 and
             (.host.deploymentSshHost | endswith(".ts.net")) and
+            .host.rebootWhenRequired == true and
             (.host.swapFile | startswith("/")) and
             (.host.swapSizeGiB | type == "number" and . > 0) and
             (.host.swappiness | type == "number" and . >= 0 and . <= 100)
@@ -179,6 +180,59 @@ jobs:
       - name: Reconcile Azure network policy
         run: scripts/reconcile-network.sh infrastructure/desired-state.json
 
+      - name: Reboot Clara when required
+        run: |
+          ssh_host=$(jq -r '.host.deploymentSshHost' infrastructure/desired-state.json)
+          reboot_when_required=$(jq -r '.host.rebootWhenRequired' infrastructure/desired-state.json)
+          if [[ $reboot_when_required == true ]] && ssh \
+            -o HostName="$ssh_host" \
+            -o IdentitiesOnly=yes \
+            -i "$CLARA_SSH_KEY" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            clara test -f /var/run/reboot-required; then
+            ssh \
+              -o HostName="$ssh_host" \
+              -o IdentitiesOnly=yes \
+              -i "$CLARA_SSH_KEY" \
+              -o BatchMode=yes \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              clara sudo systemctl reboot || true
+
+            for attempt in $(seq 1 30); do
+              if ! ssh \
+                -o HostName="$ssh_host" \
+                -o IdentitiesOnly=yes \
+                -i "$CLARA_SSH_KEY" \
+                -o BatchMode=yes \
+                -o ConnectTimeout=3 \
+                -o StrictHostKeyChecking=no \
+                -o UserKnownHostsFile=/dev/null \
+                clara true 2>/dev/null; then
+                break
+              fi
+              sleep 2
+            done
+
+            for attempt in $(seq 1 60); do
+              if ssh \
+                -o HostName="$ssh_host" \
+                -o IdentitiesOnly=yes \
+                -i "$CLARA_SSH_KEY" \
+                -o BatchMode=yes \
+                -o ConnectTimeout=5 \
+                -o StrictHostKeyChecking=no \
+                -o UserKnownHostsFile=/dev/null \
+                clara true; then
+                break
+              fi
+              [[ $attempt == 60 ]] && exit 1
+              sleep 5
+            done
+          fi
+
       - name: Verify desired state
         env:
           PUBLIC_IP: ${{ steps.vm.outputs.public_ip }}
@@ -205,7 +259,7 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
             clara \
-            "sudo test \"\$(stat -c %s '$swap_file')\" -eq $((swap_size_gib * 1024 * 1024 * 1024)) && sudo swapon --noheadings --raw --show=NAME | grep -Fxq '$swap_file' && test \"\$(sysctl -n vm.swappiness)\" -eq '$swappiness'"
+            "sudo test \"\$(stat -c %s '$swap_file')\" -eq $((swap_size_gib * 1024 * 1024 * 1024)) && sudo swapon --noheadings --raw --show=NAME | grep -Fxq '$swap_file' && test \"\$(sysctl -n vm.swappiness)\" -eq '$swappiness' && test ! -f /var/run/reboot-required"
 
           for port in 22 80 443; do
             if timeout 5 bash -c "</dev/tcp/$PUBLIC_IP/$port" 2>/dev/null; then
