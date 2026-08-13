@@ -9,6 +9,17 @@ fi
 command -v tailscale >/dev/null
 command -v jq >/dev/null
 
+masked_units_json=${CLARA_MASKED_SYSTEMD_UNITS:-[]}
+jq -e '
+  type == "array" and
+  all(.[]; type == "string" and test("^[A-Za-z0-9_.@-]+\\.(service|socket|timer|path|target)$"))
+' <<<"$masked_units_json" >/dev/null
+
+mapfile -t masked_units < <(jq -r '.[]' <<<"$masked_units_json")
+for unit in "${masked_units[@]}"; do
+  systemctl mask --now "$unit"
+done
+
 if [[ -f /tmp/00-clara.conf ]]; then
   install -m 0644 /tmp/00-clara.conf /etc/fail2ban/jail.d/00-clara.conf
   rm -f /tmp/00-clara.conf
@@ -25,6 +36,14 @@ sshd_state=$(systemctl is-active ssh 2>/dev/null || systemctl is-active sshd)
 fail2ban_state=$(systemctl is-active fail2ban)
 nginx_logpaths=$(fail2ban-client get nginx-botsearch logpath)
 ssh_journalmatch=$(fail2ban-client get sshd journalmatch)
+
+for unit in "${masked_units[@]}"; do
+  if [[ $(systemctl is-enabled "$unit" 2>/dev/null || true) != masked ]] ||
+    systemctl is-active --quiet "$unit"; then
+    echo "Host reconciliation failed: $unit is not masked and inactive." >&2
+    exit 1
+  fi
+done
 
 if [[ $backend_state != Running || $tailscale_ssh != false || $sshd_state != active ||
       $fail2ban_state != active || $nginx_logpaths != *access.log* || $ssh_journalmatch != *ssh.service* ]]; then

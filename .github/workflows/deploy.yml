@@ -61,6 +61,9 @@ jobs:
             ([.azure.inboundRules[].name] | unique | length) == (.azure.inboundRules | length) and
             ([.azure.inboundRules[].destinationPorts[] | select(. == "22" or . == "80" or . == "443")] | length) == 0 and
             (.host.deploymentSshHost | endswith(".ts.net")) and
+            (.host.maskedSystemdUnits | type == "array") and
+            (all(.host.maskedSystemdUnits[]; test("^[A-Za-z0-9_.@-]+\\.(service|socket|timer|path|target)$"))) and
+            (.host.maskedSystemdUnits | unique | length) == (.host.maskedSystemdUnits | length) and
             .host.rebootWhenRequired == true and
             (.host.swapFile | startswith("/")) and
             (.host.swapSizeGiB | type == "number" and . > 0) and
@@ -144,6 +147,7 @@ jobs:
           swap_file=$(jq -r '.host.swapFile' infrastructure/desired-state.json)
           swap_size_gib=$(jq -r '.host.swapSizeGiB' infrastructure/desired-state.json)
           swappiness=$(jq -r '.host.swappiness' infrastructure/desired-state.json)
+          masked_systemd_units=$(jq -c '.host.maskedSystemdUnits' infrastructure/desired-state.json)
           ssh \
             -o HostName="$ssh_host" \
             -o IdentitiesOnly=yes \
@@ -167,7 +171,7 @@ jobs:
             -i "$CLARA_SSH_KEY" \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
-            clara 'sudo bash -s' \
+            clara "sudo CLARA_MASKED_SYSTEMD_UNITS='$masked_systemd_units' bash -s" \
             < scripts/reconcile-host.sh
 
       - name: Reconcile runner Clara SSH alias

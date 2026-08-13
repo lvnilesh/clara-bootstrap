@@ -27,6 +27,10 @@
   },
   "host": {
     "deploymentSshHost": "clara.tail52f7b.ts.net",
+    "maskedSystemdUnits": [
+      "fwupd.service",
+      "fwupd-refresh.timer"
+    ],
     "rebootWhenRequired": true,
     "swapFile": "/swapfile",
     "swapSizeGiB": 2,
