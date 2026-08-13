@@ -27,6 +27,9 @@
   },
   "host": {
     "deploymentSshHost": "clara.tail52f7b.ts.net",
+    "disabledUpdateMotdScripts": [
+      "85-fwupd"
+    ],
     "maskedSystemdUnits": [
       "fwupd.service",
       "fwupd-refresh.timer"

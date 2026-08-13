@@ -61,6 +61,9 @@ jobs:
             ([.azure.inboundRules[].name] | unique | length) == (.azure.inboundRules | length) and
             ([.azure.inboundRules[].destinationPorts[] | select(. == "22" or . == "80" or . == "443")] | length) == 0 and
             (.host.deploymentSshHost | endswith(".ts.net")) and
+            (.host.disabledUpdateMotdScripts | type == "array") and
+            (all(.host.disabledUpdateMotdScripts[]; test("^[A-Za-z0-9_-]+$"))) and
+            (.host.disabledUpdateMotdScripts | unique | length) == (.host.disabledUpdateMotdScripts | length) and
             (.host.maskedSystemdUnits | type == "array") and
             (all(.host.maskedSystemdUnits[]; test("^[A-Za-z0-9_.@-]+\\.(service|socket|timer|path|target)$"))) and
             (.host.maskedSystemdUnits | unique | length) == (.host.maskedSystemdUnits | length) and
@@ -147,6 +150,7 @@ jobs:
           swap_file=$(jq -r '.host.swapFile' infrastructure/desired-state.json)
           swap_size_gib=$(jq -r '.host.swapSizeGiB' infrastructure/desired-state.json)
           swappiness=$(jq -r '.host.swappiness' infrastructure/desired-state.json)
+          disabled_update_motd_scripts=$(jq -c '.host.disabledUpdateMotdScripts' infrastructure/desired-state.json)
           masked_systemd_units=$(jq -c '.host.maskedSystemdUnits' infrastructure/desired-state.json)
           ssh \
             -o HostName="$ssh_host" \
@@ -171,7 +175,7 @@ jobs:
             -i "$CLARA_SSH_KEY" \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
-            clara "sudo CLARA_MASKED_SYSTEMD_UNITS='$masked_systemd_units' bash -s" \
+            clara "sudo CLARA_DISABLED_UPDATE_MOTD_SCRIPTS='$disabled_update_motd_scripts' CLARA_MASKED_SYSTEMD_UNITS='$masked_systemd_units' bash -s" \
             < scripts/reconcile-host.sh
 
       - name: Reconcile runner Clara SSH alias

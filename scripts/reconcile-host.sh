@@ -9,6 +9,24 @@ fi
 command -v tailscale >/dev/null
 command -v jq >/dev/null
 
+disabled_motd_json=${CLARA_DISABLED_UPDATE_MOTD_SCRIPTS:-[]}
+jq -e '
+  type == "array" and
+  all(.[]; type == "string" and test("^[A-Za-z0-9_-]+$"))
+' <<<"$disabled_motd_json" >/dev/null
+
+mapfile -t disabled_motd_scripts < <(jq -r '.[]' <<<"$disabled_motd_json")
+for script in "${disabled_motd_scripts[@]}"; do
+  script_path="/etc/update-motd.d/$script"
+  [[ -e $script_path ]] || {
+    echo "Host reconciliation failed: $script_path does not exist." >&2
+    exit 1
+  }
+  chmod a-x "$script_path"
+  rm -f "/run/motd.d/$script"
+done
+rm -f /run/motd.dynamic
+
 masked_units_json=${CLARA_MASKED_SYSTEMD_UNITS:-[]}
 jq -e '
   type == "array" and
@@ -37,6 +55,13 @@ sshd_state=$(systemctl is-active ssh 2>/dev/null || systemctl is-active sshd)
 fail2ban_state=$(systemctl is-active fail2ban)
 nginx_logpaths=$(fail2ban-client get nginx-botsearch logpath)
 ssh_journalmatch=$(fail2ban-client get sshd journalmatch)
+
+for script in "${disabled_motd_scripts[@]}"; do
+  if [[ -x /etc/update-motd.d/$script || -e /run/motd.d/$script ]]; then
+    echo "Host reconciliation failed: MOTD script $script is not disabled." >&2
+    exit 1
+  fi
+done
 
 for unit in "${masked_units[@]}"; do
   if [[ $(systemctl is-enabled "$unit" 2>/dev/null || true) != masked ]] ||
