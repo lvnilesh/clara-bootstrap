@@ -18,6 +18,7 @@ jq -e '
 mapfile -t masked_units < <(jq -r '.[]' <<<"$masked_units_json")
 for unit in "${masked_units[@]}"; do
   systemctl mask --now "$unit"
+  systemctl reset-failed "$unit"
 done
 
 if [[ -f /tmp/00-clara.conf ]]; then
