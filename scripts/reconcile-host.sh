@@ -46,6 +46,33 @@ fi
 systemctl enable --now fail2ban
 systemctl restart fail2ban
 
+# Deploy workflows git-fetch over these aliases; a MITM'd GitHub would run code on clara.
+deploy_ssh_config=/home/cloudgenius/.ssh/config
+if [[ -f /tmp/ssh_known_hosts ]]; then
+  install -m 0644 /tmp/ssh_known_hosts /etc/ssh/ssh_known_hosts
+  rm -f /tmp/ssh_known_hosts
+fi
+if [[ -f $deploy_ssh_config ]]; then
+  sed -i -E \
+    -e 's/^([[:space:]]*)StrictHostKeyChecking[[:space:]]+no$/\1StrictHostKeyChecking yes/' \
+    -e '/^[[:space:]]*UserKnownHostsFile[[:space:]]+\/dev\/null$/d' \
+    "$deploy_ssh_config"
+fi
+mapfile -t github_aliases < <(awk '$1 == "Host" && $2 ~ /^github-/ { print $2 }' "$deploy_ssh_config" 2>/dev/null)
+for alias in "${github_aliases[@]}"; do
+  probe=$(sudo -u cloudgenius ssh -o BatchMode=yes -o ConnectTimeout=10 \
+    -o PreferredAuthentications=none -T "$alias" 2>&1 || true)
+  if grep -q 'Host key verification failed' <<<"$probe"; then
+    echo "Host reconciliation failed: GitHub host key mismatch via $alias." >&2
+    exit 1
+  fi
+done
+if grep -Eq '^[[:space:]]*(StrictHostKeyChecking[[:space:]]+no|UserKnownHostsFile[[:space:]]+/dev/null)$' \
+    "$deploy_ssh_config" 2>/dev/null; then
+  echo "Host reconciliation failed: $deploy_ssh_config still disables host-key checking." >&2
+  exit 1
+fi
+
 systemctl enable --now tailscaled
 tailscale set --hostname="${CLARA_HOSTNAME:-clara}" --ssh=false
 

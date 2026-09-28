@@ -10,6 +10,7 @@ on:
       - scripts/reconcile-network.sh
       - scripts/reconcile-host.sh
       - etc/fail2ban/jail.d/00-clara.conf
+      - etc/ssh/ssh_known_hosts
       - .github/workflows/deploy.yml
   workflow_dispatch:
 
@@ -167,13 +168,20 @@ jobs:
             -o HostName="$ssh_host" \
             -o IdentitiesOnly=yes \
             -i "$CLARA_SSH_KEY" \
+            clara 'cat | sudo tee /tmp/ssh_known_hosts >/dev/null' \
+            < etc/ssh/ssh_known_hosts
+          ssh \
+            -o HostName="$ssh_host" \
+            -o IdentitiesOnly=yes \
+            -i "$CLARA_SSH_KEY" \
             clara "sudo CLARA_DISABLED_UPDATE_MOTD_SCRIPTS='$disabled_update_motd_scripts' CLARA_MASKED_SYSTEMD_UNITS='$masked_systemd_units' bash -s" \
             < scripts/reconcile-host.sh
 
-      - name: Reconcile runner Clara SSH alias
+      - name: Verify runner Clara SSH alias
         run: |
+          # The alias and clara's pinned host key are declared in mynix
+          # (hosts/runner/github-runners.nix); the ephemeral HOME has no config.
           ssh_host=$(jq -r '.host.deploymentSshHost' infrastructure/desired-state.json)
-          sed -i "/^Host clara$/,/^Host / s/^  HostName .*/  HostName $ssh_host/" ~/.ssh/config
           [[ $(ssh -G clara | awk '$1 == "hostname" { print $2; exit }') == "$ssh_host" ]]
           ssh -o BatchMode=yes -o ConnectTimeout=5 clara true
 
