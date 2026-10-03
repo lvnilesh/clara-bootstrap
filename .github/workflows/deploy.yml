@@ -7,10 +7,13 @@ on:
       - bootstrap.sh
       - infrastructure/desired-state.json
       - scripts/configure-swap.sh
+      - scripts/reconcile-firewall.sh
       - scripts/reconcile-network.sh
       - scripts/reconcile-host.sh
       - etc/fail2ban/jail.d/00-clara.conf
+      - etc/ssh/sshd_config.d/99-clara-hardening.conf
       - etc/ssh/ssh_known_hosts
+      - etc/systemd/system/clara-firewall.service
       - .github/workflows/deploy.yml
   workflow_dispatch:
 
@@ -62,6 +65,11 @@ jobs:
             ([.azure.inboundRules[].name] | unique | length) == (.azure.inboundRules | length) and
             ([.azure.inboundRules[].destinationPorts[] | select(. == "22" or . == "80" or . == "443")] | length) == 0 and
             (.host.deploymentSshHost | endswith(".ts.net")) and
+            (.host.firewall.publicInterface | test("^[A-Za-z0-9_.:-]+$")) and
+            (.host.firewall.tailscaleInterface | test("^[A-Za-z0-9_.:-]+$")) and
+            (.host.firewall.tailscaleTcpPorts == [22, 443]) and
+            (.host.firewall.publicUdpPorts == [21820, 51820]) and
+            (.host.firewall.sourceTcpRules == [{"source": "73.221.218.159/32", "port": 1935}]) and
             (.host.disabledUpdateMotdScripts | type == "array") and
             (all(.host.disabledUpdateMotdScripts[]; test("^[A-Za-z0-9_-]+$"))) and
             (.host.disabledUpdateMotdScripts | unique | length) == (.host.disabledUpdateMotdScripts | length) and
@@ -73,7 +81,7 @@ jobs:
             (.host.swapSizeGiB | type == "number" and . > 0) and
             (.host.swappiness | type == "number" and . >= 0 and . <= 100)
           ' infrastructure/desired-state.json >/dev/null
-          bash -n scripts/configure-swap.sh scripts/reconcile-host.sh scripts/reconcile-network.sh
+          bash -n scripts/configure-swap.sh scripts/reconcile-firewall.sh scripts/reconcile-host.sh scripts/reconcile-network.sh
 
       - name: Install Azure CLI
         run: |
@@ -170,6 +178,30 @@ jobs:
             -i "$CLARA_SSH_KEY" \
             clara 'cat | sudo tee /tmp/ssh_known_hosts >/dev/null' \
             < etc/ssh/ssh_known_hosts
+          ssh \
+            -o HostName="$ssh_host" \
+            -o IdentitiesOnly=yes \
+            -i "$CLARA_SSH_KEY" \
+            clara 'cat | sudo tee /tmp/99-clara-hardening.conf >/dev/null' \
+            < etc/ssh/sshd_config.d/99-clara-hardening.conf
+          ssh \
+            -o HostName="$ssh_host" \
+            -o IdentitiesOnly=yes \
+            -i "$CLARA_SSH_KEY" \
+            clara 'cat | sudo tee /tmp/reconcile-firewall.sh >/dev/null' \
+            < scripts/reconcile-firewall.sh
+          ssh \
+            -o HostName="$ssh_host" \
+            -o IdentitiesOnly=yes \
+            -i "$CLARA_SSH_KEY" \
+            clara 'cat | sudo tee /tmp/clara-firewall.service >/dev/null' \
+            < etc/systemd/system/clara-firewall.service
+          ssh \
+            -o HostName="$ssh_host" \
+            -o IdentitiesOnly=yes \
+            -i "$CLARA_SSH_KEY" \
+            clara 'cat | sudo tee /tmp/clara-desired-state.json >/dev/null' \
+            < infrastructure/desired-state.json
           ssh \
             -o HostName="$ssh_host" \
             -o IdentitiesOnly=yes \

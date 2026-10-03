@@ -27,6 +27,18 @@
   },
   "host": {
     "deploymentSshHost": "clara.tail52f7b.ts.net",
+    "firewall": {
+      "publicInterface": "eth0",
+      "tailscaleInterface": "tailscale0",
+      "tailscaleTcpPorts": [22, 443],
+      "publicUdpPorts": [21820, 51820],
+      "sourceTcpRules": [
+        {
+          "source": "73.221.218.159/32",
+          "port": 1935
+        }
+      ]
+    },
     "disabledUpdateMotdScripts": [
       "85-fwupd"
     ],

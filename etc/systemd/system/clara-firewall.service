@@ -1,0 +1,14 @@
+[Unit]
+Description=Reconcile Clara host and Docker ingress firewall
+Wants=network-online.target tailscaled.service
+After=network-online.target tailscaled.service docker.service
+Requires=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/reconcile-clara-firewall /etc/clara-bootstrap/desired-state.json
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

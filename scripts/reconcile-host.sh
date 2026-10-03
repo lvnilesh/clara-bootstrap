@@ -52,6 +52,13 @@ if [[ -f /tmp/ssh_known_hosts ]]; then
   install -m 0644 /tmp/ssh_known_hosts /etc/ssh/ssh_known_hosts
   rm -f /tmp/ssh_known_hosts
 fi
+if [[ -f /tmp/99-clara-hardening.conf ]]; then
+  install -d -m 0755 /etc/ssh/sshd_config.d
+  install -m 0644 /tmp/99-clara-hardening.conf /etc/ssh/sshd_config.d/99-clara-hardening.conf
+  rm -f /tmp/99-clara-hardening.conf
+  sshd -t
+  systemctl reload ssh
+fi
 if [[ -f $deploy_ssh_config ]]; then
   sed -i -E \
     -e 's/^([[:space:]]*)StrictHostKeyChecking[[:space:]]+no$/\1StrictHostKeyChecking yes/' \
@@ -76,12 +83,26 @@ fi
 systemctl enable --now tailscaled
 tailscale set --hostname="${CLARA_HOSTNAME:-clara}" --ssh=false
 
+if [[ -f /tmp/reconcile-firewall.sh && -f /tmp/clara-firewall.service &&
+      -f /tmp/clara-desired-state.json ]]; then
+  install -d -m 0755 /etc/clara-bootstrap
+  install -m 0755 /tmp/reconcile-firewall.sh /usr/local/sbin/reconcile-clara-firewall
+  install -m 0644 /tmp/clara-firewall.service /etc/systemd/system/clara-firewall.service
+  install -m 0644 /tmp/clara-desired-state.json /etc/clara-bootstrap/desired-state.json
+  rm -f /tmp/reconcile-firewall.sh /tmp/clara-firewall.service /tmp/clara-desired-state.json
+  systemctl daemon-reload
+  systemctl enable --now clara-firewall.service
+  systemctl restart clara-firewall.service
+fi
+
 backend_state=$(tailscale status --json | jq -r '.BackendState')
 tailscale_ssh=$(tailscale debug prefs | jq -r '.RunSSH')
 sshd_state=$(systemctl is-active ssh 2>/dev/null || systemctl is-active sshd)
 fail2ban_state=$(systemctl is-active fail2ban)
+firewall_state=$(systemctl is-active clara-firewall.service)
 nginx_logpaths=$(fail2ban-client get nginx-botsearch logpath)
 ssh_journalmatch=$(fail2ban-client get sshd journalmatch)
+sshd_effective=$(sshd -T)
 
 for script in "${disabled_motd_scripts[@]}"; do
   if [[ -x /etc/update-motd.d/$script || -e /run/motd.d/$script ]]; then
@@ -99,11 +120,14 @@ for unit in "${masked_units[@]}"; do
 done
 
 if [[ $backend_state != Running || $tailscale_ssh != false || $sshd_state != active ||
-      $fail2ban_state != active || $nginx_logpaths != *access.log* || $ssh_journalmatch != *ssh.service* ]]; then
-  printf 'Host reconciliation failed: backend=%s tailscale_ssh=%s sshd=%s fail2ban=%s\n' \
-    "$backend_state" "$tailscale_ssh" "$sshd_state" "$fail2ban_state" >&2
+      $fail2ban_state != active || $firewall_state != active ||
+      $nginx_logpaths != *access.log* || $ssh_journalmatch != *ssh.service* ]] ||
+  ! grep -Fxq 'permitrootlogin no' <<<"$sshd_effective" ||
+  ! grep -Fxq 'maxauthtries 3' <<<"$sshd_effective"; then
+  printf 'Host reconciliation failed: backend=%s tailscale_ssh=%s sshd=%s fail2ban=%s firewall=%s\n' \
+    "$backend_state" "$tailscale_ssh" "$sshd_state" "$fail2ban_state" "$firewall_state" >&2
   exit 1
 fi
 
-printf 'Host reconciled: backend=%s tailscale_ssh=%s sshd=%s fail2ban=%s\n' \
-  "$backend_state" "$tailscale_ssh" "$sshd_state" "$fail2ban_state"
+printf 'Host reconciled: backend=%s tailscale_ssh=%s sshd=%s fail2ban=%s firewall=%s\n' \
+  "$backend_state" "$tailscale_ssh" "$sshd_state" "$fail2ban_state" "$firewall_state"
