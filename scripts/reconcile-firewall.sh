@@ -17,6 +17,10 @@ jq -e '
   ($fw.tailscaleInterface | test("^[A-Za-z0-9_.:-]+$")) and
   ($fw.tailscaleTcpPorts | type == "array" and length > 0 and all(.[]; type == "number" and . >= 1 and . <= 65535)) and
   ($fw.publicUdpPorts | type == "array" and length > 0 and all(.[]; type == "number" and . >= 1 and . <= 65535)) and
+  ($fw.hostSourceTcpRules | type == "array" and all(.[];
+    (.source | test("^[0-9.]+/[0-9]+$")) and
+    (.port | type == "number" and . >= 1 and . <= 65535)
+  )) and
   ($fw.sourceTcpRules | type == "array" and all(.[];
     (.source | test("^[0-9.]+/[0-9]+$")) and
     (.port | type == "number" and . >= 1 and . <= 65535)
@@ -27,6 +31,7 @@ public_interface=$(jq -r '.host.firewall.publicInterface' "$desired_state")
 tailscale_interface=$(jq -r '.host.firewall.tailscaleInterface' "$desired_state")
 mapfile -t tailscale_tcp_ports < <(jq -r '.host.firewall.tailscaleTcpPorts[]' "$desired_state")
 mapfile -t public_udp_ports < <(jq -r '.host.firewall.publicUdpPorts[]' "$desired_state")
+mapfile -t host_source_tcp_rules < <(jq -c '.host.firewall.hostSourceTcpRules[]' "$desired_state")
 mapfile -t source_tcp_rules < <(jq -c '.host.firewall.sourceTcpRules[]' "$desired_state")
 
 ip link show "$public_interface" >/dev/null
@@ -39,6 +44,11 @@ ufw default deny routed >/dev/null
 
 for port in "${tailscale_tcp_ports[@]}"; do
   ufw allow in on "$tailscale_interface" proto tcp to any port "$port" >/dev/null
+done
+for rule in "${host_source_tcp_rules[@]}"; do
+  source=$(jq -r '.source' <<<"$rule")
+  port=$(jq -r '.port' <<<"$rule")
+  ufw allow in proto tcp from "$source" to any port "$port" >/dev/null
 done
 
 for port in "${public_udp_ports[@]}"; do

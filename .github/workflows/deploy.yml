@@ -69,6 +69,7 @@ jobs:
             (.host.firewall.tailscaleInterface | test("^[A-Za-z0-9_.:-]+$")) and
             (.host.firewall.tailscaleTcpPorts == [22, 443]) and
             (.host.firewall.publicUdpPorts == [21820, 51820]) and
+            (.host.firewall.hostSourceTcpRules == [{"source": "172.19.0.0/16", "port": 443}]) and
             (.host.firewall.sourceTcpRules == [{"source": "73.221.218.159/32", "port": 1935}]) and
             (.host.disabledUpdateMotdScripts | type == "array") and
             (all(.host.disabledUpdateMotdScripts[]; test("^[A-Za-z0-9_-]+$"))) and

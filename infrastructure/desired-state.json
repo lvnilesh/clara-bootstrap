@@ -32,6 +32,12 @@
       "tailscaleInterface": "tailscale0",
       "tailscaleTcpPorts": [22, 443],
       "publicUdpPorts": [21820, 51820],
+      "hostSourceTcpRules": [
+        {
+          "source": "172.19.0.0/16",
+          "port": 443
+        }
+      ],
       "sourceTcpRules": [
         {
           "source": "73.221.218.159/32",
