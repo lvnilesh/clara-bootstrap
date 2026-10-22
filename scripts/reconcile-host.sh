@@ -80,6 +80,12 @@ if grep -Eq '^[[:space:]]*(StrictHostKeyChecking[[:space:]]+no|UserKnownHostsFil
   exit 1
 fi
 
+if [[ $(tailscale version | head -n 1) != 1.104.2 ]]; then
+  tailscale update --yes --version=1.104.2
+fi
+[[ $(tailscale version | head -n 1) == 1.104.2 ]]
+tailscale version | grep -F 'go1.27.3'
+
 systemctl enable --now tailscaled
 tailscale set --hostname="${CLARA_HOSTNAME:-clara}" --ssh=false
 
