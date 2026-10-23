@@ -70,7 +70,7 @@ Or, if you need to pass env vars:
 ```yaml
 #cloud-config
 runcmd:
-  - [bash, -c, "export CLARA_HOSTNAME=clara CLARA_IGNOREIP='192.168.1.0/24 73.221.218.159/32'; curl -fsSL https://raw.githubusercontent.com/lvnilesh/clara-bootstrap/main/bootstrap.sh | bash"]
+  - [bash, -c, "export CLARA_HOSTNAME=clara CLARA_IGNOREIP='192.168.1.0/24 73.239.206.158/32'; curl -fsSL https://raw.githubusercontent.com/lvnilesh/clara-bootstrap/main/bootstrap.sh | bash"]
 ```
 
 ### Alternative: out-of-band execution after boot

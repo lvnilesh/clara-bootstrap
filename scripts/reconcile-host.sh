@@ -96,6 +96,13 @@ if [[ -f /tmp/reconcile-firewall.sh && -f /tmp/clara-firewall.service &&
   install -m 0644 /tmp/clara-firewall.service /etc/systemd/system/clara-firewall.service
   install -m 0644 /tmp/clara-desired-state.json /etc/clara-bootstrap/desired-state.json
   rm -f /tmp/reconcile-firewall.sh /tmp/clara-firewall.service /tmp/clara-desired-state.json
+  home_cidrs=$(jq -r '[.host.firewall.sourceTcpRules[].source] | unique | join(" ")' /etc/clara-bootstrap/desired-state.json)
+  cat > /etc/fail2ban/jail.d/01-ignoreip.conf <<IPCFG
+[DEFAULT]
+ignoreip = 127.0.0.1/8 ::1 192.168.1.0/24 ${home_cidrs}
+IPCFG
+  chmod 0644 /etc/fail2ban/jail.d/01-ignoreip.conf
+  systemctl reload fail2ban 2>/dev/null || systemctl restart fail2ban
   systemctl daemon-reload
   systemctl enable --now clara-firewall.service
   systemctl restart clara-firewall.service

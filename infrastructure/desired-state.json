@@ -20,7 +20,7 @@
         "name": "rtmp",
         "priority": 1030,
         "protocol": "Tcp",
-        "source": "73.221.218.159/32",
+        "source": "73.239.206.158/32",
         "destinationPorts": ["1935"]
       }
     ]
@@ -40,7 +40,7 @@
       ],
       "sourceTcpRules": [
         {
-          "source": "73.221.218.159/32",
+          "source": "73.239.206.158/32",
           "port": 1935
         }
       ]

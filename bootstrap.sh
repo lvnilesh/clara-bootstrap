@@ -215,7 +215,7 @@ fi
 
 
 # CLARA_IGNOREIP: space-separated CIDRs to exempt from fail2ban.
-# Example: CLARA_IGNOREIP="192.168.1.0/24 73.221.218.159/32"
+# Example: CLARA_IGNOREIP="192.168.1.0/24 73.239.206.158/32"
 if [[ -n "${CLARA_IGNOREIP:-}" ]]; then
   cat > /etc/fail2ban/jail.d/01-ignoreip.conf <<IPCFG
 [DEFAULT]
