@@ -10,11 +10,14 @@ on:
       - scripts/reconcile-firewall.sh
       - scripts/reconcile-network.sh
       - scripts/reconcile-host.sh
+      - scripts/resolve-desired-state.sh
       - etc/fail2ban/jail.d/00-clara.conf
       - etc/ssh/sshd_config.d/99-clara-hardening.conf
       - etc/ssh/ssh_known_hosts
       - etc/systemd/system/clara-firewall.service
       - .github/workflows/deploy.yml
+  schedule:
+    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -55,6 +58,8 @@ jobs:
       - name: Validate desired state
         run: |
           jq -e '
+            .cloudflare.zone == "cloudgeni.us" and
+            .cloudflare.homeHostname == "home.cloudgeni.us" and
             .azure.resourceGroup == "RG-CLARA" and
             .azure.vmName == "clara" and
             .azure.vmSize == "Standard_B2ms" and
@@ -70,7 +75,7 @@ jobs:
             (.host.firewall.tailscaleTcpPorts == [22, 443]) and
             (.host.firewall.publicUdpPorts == [21820, 51820]) and
             (.host.firewall.hostSourceTcpRules == [{"source": "172.19.0.0/16", "port": 443}]) and
-            (.host.firewall.sourceTcpRules == [{"source": "73.239.206.158/32", "port": 1935}]) and
+            (.host.firewall.sourceTcpRules == [{"source": .cloudflare.homeHostname, "port": 1935}]) and
             (.host.disabledUpdateMotdScripts | type == "array") and
             (all(.host.disabledUpdateMotdScripts[]; test("^[A-Za-z0-9_-]+$"))) and
             (.host.disabledUpdateMotdScripts | unique | length) == (.host.disabledUpdateMotdScripts | length) and
@@ -82,7 +87,18 @@ jobs:
             (.host.swapSizeGiB | type == "number" and . > 0) and
             (.host.swappiness | type == "number" and . >= 0 and . <= 100)
           ' infrastructure/desired-state.json >/dev/null
-          bash -n scripts/configure-swap.sh scripts/reconcile-firewall.sh scripts/reconcile-host.sh scripts/reconcile-network.sh
+          bash -n scripts/configure-swap.sh scripts/reconcile-firewall.sh scripts/reconcile-host.sh scripts/reconcile-network.sh scripts/resolve-desired-state.sh
+
+      - name: Resolve dynamic Cloudflare home IP in desired state
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          chmod +x scripts/resolve-desired-state.sh
+          scripts/resolve-desired-state.sh infrastructure/desired-state.json
+          jq -e '
+            all(.azure.inboundRules[]; .source == "*" or (.source | test("^([0-9]{1,3}\\.){3}[0-9]{1,3}/32$"))) and
+            all(.host.firewall.sourceTcpRules[]; .source | test("^([0-9]{1,3}\\.){3}[0-9]{1,3}/32$"))
+          ' infrastructure/desired-state.json >/dev/null
 
       - name: Install Azure CLI
         run: |

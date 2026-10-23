@@ -1,4 +1,8 @@
 {
+  "cloudflare": {
+    "zone": "cloudgeni.us",
+    "homeHostname": "home.cloudgeni.us"
+  },
   "azure": {
     "resourceGroup": "RG-CLARA",
     "vmName": "clara",
@@ -20,7 +24,7 @@
         "name": "rtmp",
         "priority": 1030,
         "protocol": "Tcp",
-        "source": "73.239.206.158/32",
+        "source": "home.cloudgeni.us",
         "destinationPorts": ["1935"]
       }
     ]
@@ -40,7 +44,7 @@
       ],
       "sourceTcpRules": [
         {
-          "source": "73.239.206.158/32",
+          "source": "home.cloudgeni.us",
           "port": 1935
         }
       ]
