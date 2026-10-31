@@ -7,9 +7,12 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 desired_state=${1:-/etc/clara-bootstrap/desired-state.json}
-for command in jq ufw iptables ip6tables ip; do
+for command in jq ufw iptables ip6tables ip nft systemctl; do
   command -v "$command" >/dev/null
 done
+
+systemctl is-active --quiet kernel-security.service
+nft list chain ip cg_kernel_guard prerouting >/dev/null
 
 jq -e '
   .host.firewall as $fw |
@@ -105,5 +108,6 @@ ip6tables -I DOCKER-USER 1 -j "$docker_chain"
 ufw status | grep -Fxq 'Status: active'
 iptables -C DOCKER-USER -j "$docker_chain"
 ip6tables -C DOCKER-USER -j "$docker_chain"
+nft list chain ip cg_kernel_guard prerouting >/dev/null
 printf 'Host firewall reconciled: public=%s tailscale=%s udp=%s\n' \
   "$public_interface" "$tailscale_interface" "${public_udp_ports[*]}"

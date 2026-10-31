@@ -89,6 +89,22 @@ tailscale version | grep -F 'go1.27.3'
 systemctl enable --now tailscaled
 tailscale set --hostname="${CLARA_HOSTNAME:-clara}" --ssh=false
 
+if [[ -f /tmp/kernel-security.nft && -f /tmp/kernel-security.service &&
+      -f /tmp/60-kernel-security.conf ]]; then
+  if ! command -v nft >/dev/null; then
+    DEBIAN_FRONTEND=noninteractive apt-get install -y nftables
+  fi
+  install -d -m 0755 /etc/clara-bootstrap /etc/sysctl.d
+  install -m 0644 /tmp/kernel-security.nft /etc/clara-bootstrap/kernel-security.nft
+  install -m 0644 /tmp/kernel-security.service /etc/systemd/system/kernel-security.service
+  install -m 0644 /tmp/60-kernel-security.conf /etc/sysctl.d/60-kernel-security.conf
+  sysctl -p /etc/sysctl.d/60-kernel-security.conf
+  systemctl daemon-reload
+  systemctl enable --now kernel-security.service
+  systemctl reload kernel-security.service
+  rm -f /tmp/kernel-security.nft /tmp/kernel-security.service /tmp/60-kernel-security.conf
+fi
+
 if [[ -f /tmp/reconcile-firewall.sh && -f /tmp/clara-firewall.service &&
       -f /tmp/clara-desired-state.json ]]; then
   install -d -m 0755 /etc/clara-bootstrap
@@ -113,6 +129,7 @@ tailscale_ssh=$(tailscale debug prefs | jq -r '.RunSSH')
 sshd_state=$(systemctl is-active ssh 2>/dev/null || systemctl is-active sshd)
 fail2ban_state=$(systemctl is-active fail2ban)
 firewall_state=$(systemctl is-active clara-firewall.service)
+kernel_guard_state=$(systemctl is-active kernel-security.service)
 nginx_logpaths=$(fail2ban-client get nginx-botsearch logpath)
 ssh_journalmatch=$(fail2ban-client get sshd journalmatch)
 sshd_effective=$(sshd -T)
@@ -134,6 +151,7 @@ done
 
 if [[ $backend_state != Running || $tailscale_ssh != false || $sshd_state != active ||
       $fail2ban_state != active || $firewall_state != active ||
+  $kernel_guard_state != active || $(sysctl -n net.mptcp.enabled) != 0 ||
       $nginx_logpaths != *access.log* || $ssh_journalmatch != *ssh.service* ]] ||
   ! grep -Fxq 'permitrootlogin no' <<<"$sshd_effective" ||
   ! grep -Fxq 'maxauthtries 3' <<<"$sshd_effective"; then
@@ -141,6 +159,7 @@ if [[ $backend_state != Running || $tailscale_ssh != false || $sshd_state != act
     "$backend_state" "$tailscale_ssh" "$sshd_state" "$fail2ban_state" "$firewall_state" >&2
   exit 1
 fi
+nft list chain ip cg_kernel_guard prerouting >/dev/null
 
 printf 'Host reconciled: backend=%s tailscale_ssh=%s sshd=%s fail2ban=%s firewall=%s\n' \
   "$backend_state" "$tailscale_ssh" "$sshd_state" "$fail2ban_state" "$firewall_state"

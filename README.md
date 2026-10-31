@@ -54,6 +54,21 @@ Recovery copies are encrypted in the `mynix` repository as
 `secrets/clara-azure-credentials.json.age` and
 `secrets/clara-bootstrap-actions-ssh.age`. Never commit either plaintext.
 
+### Kernel packet guard
+
+The host workflow installs `kernel-security.service` before reconciling UFW.
+Its dedicated `ip cg_kernel_guard` nft table drops IPv4 TCP packets containing
+IP options before conntrack and Docker DNAT, without changing existing port
+allowlists. Logging is rate-limited separately from unconditional dropping;
+the `ip_options_dropped` counter counts all matches. Atomic reloads replace only
+this table, and stopping the service leaves the rules installed.
+
+The persistent `net.mptcp.enabled=0` setting is supplementary mitigation for
+CVE-2026-98432. It is per network namespace and does not remove existing MPTCP
+listeners. Clara remains mitigated, not patched, until its verified Ubuntu/Azure
+kernel fix is installed and booted. Do not edit the live host to deploy this
+policy; use this source and its existing GitHub Actions workflow.
+
 ### Recommended: run from cloud-init before first SSH
 
 Clara renames the default cloud user (`azureuser`, `ubuntu`, …) to `cloudgenius`

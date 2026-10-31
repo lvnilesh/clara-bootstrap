@@ -1,0 +1,15 @@
+[Unit]
+Description=Drop IPv4 TCP IP options before conntrack and DNAT
+DefaultDependencies=no
+After=systemd-sysctl.service
+Before=network-pre.target ufw.service docker.service tailscaled.service systemd-networkd.service networking.service NetworkManager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/clara-bootstrap/kernel-security.nft
+ExecReload=/usr/sbin/nft -f /etc/clara-bootstrap/kernel-security.nft
+
+[Install]
+WantedBy=network-pre.target multi-user.target
+RequiredBy=network-pre.target ufw.service docker.service tailscaled.service systemd-networkd.service networking.service NetworkManager.service

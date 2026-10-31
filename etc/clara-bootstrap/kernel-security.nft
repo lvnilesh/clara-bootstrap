@@ -1,0 +1,13 @@
+add table ip cg_kernel_guard
+delete table ip cg_kernel_guard
+table ip cg_kernel_guard {
+  counter ip_options_dropped {}
+  chain drop_tcp_ip_options {
+    limit rate 5/minute burst 10 packets log prefix "cg-ipopts-drop: "
+    counter name ip_options_dropped drop
+  }
+  chain prerouting {
+    type filter hook prerouting priority -310; policy accept;
+    meta l4proto tcp ip hdrlength > 5 jump drop_tcp_ip_options
+  }
+}

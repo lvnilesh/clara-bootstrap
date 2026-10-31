@@ -114,7 +114,7 @@ apt-get install -y \
   docker.io docker-compose-v2 \
   nginx \
   fail2ban \
-  ufw \
+  ufw nftables \
   restic
 
 systemctl enable --now docker

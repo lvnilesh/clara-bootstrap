@@ -17,6 +17,9 @@ on:
       - etc/ssh/sshd_config.d/99-clara-hardening.conf
       - etc/ssh/ssh_known_hosts
       - etc/systemd/system/clara-firewall.service
+      - etc/systemd/system/kernel-security.service
+      - etc/clara-bootstrap/kernel-security.nft
+      - etc/sysctl.d/60-kernel-security.conf
       - etc/systemd/system/clara-docker-cleanup.service
       - etc/systemd/system/clara-docker-cleanup.timer
       - .github/workflows/deploy.yml
@@ -92,6 +95,7 @@ jobs:
             (.host.swappiness | type == "number" and . >= 0 and . <= 100)
           ' infrastructure/desired-state.json >/dev/null
           bash -n scripts/configure-swap.sh scripts/reconcile-firewall.sh scripts/reconcile-host.sh scripts/reconcile-docker.sh scripts/reconcile-network.sh scripts/resolve-desired-state.sh
+          sudo -n unshare --net nft --check --file etc/clara-bootstrap/kernel-security.nft
           jq -e '.["log-driver"] == "json-file" and .["log-opts"] == {"max-size": "10m", "max-file": "3"}' etc/docker/daemon.json >/dev/null
 
       - name: Resolve dynamic Cloudflare home IP in desired state
@@ -222,6 +226,24 @@ jobs:
             -o HostName="$ssh_host" \
             -o IdentitiesOnly=yes \
             -i "$CLARA_SSH_KEY" \
+            clara 'cat | sudo tee /tmp/kernel-security.nft >/dev/null' \
+            < etc/clara-bootstrap/kernel-security.nft
+          ssh \
+            -o HostName="$ssh_host" \
+            -o IdentitiesOnly=yes \
+            -i "$CLARA_SSH_KEY" \
+            clara 'cat | sudo tee /tmp/kernel-security.service >/dev/null' \
+            < etc/systemd/system/kernel-security.service
+          ssh \
+            -o HostName="$ssh_host" \
+            -o IdentitiesOnly=yes \
+            -i "$CLARA_SSH_KEY" \
+            clara 'cat | sudo tee /tmp/60-kernel-security.conf >/dev/null' \
+            < etc/sysctl.d/60-kernel-security.conf
+          ssh \
+            -o HostName="$ssh_host" \
+            -o IdentitiesOnly=yes \
+            -i "$CLARA_SSH_KEY" \
             clara 'cat | sudo tee /tmp/clara-desired-state.json >/dev/null' \
             < infrastructure/desired-state.json
           ssh \
@@ -322,7 +344,7 @@ jobs:
             -o IdentitiesOnly=yes \
             -i "$CLARA_SSH_KEY" \
             clara \
-            "sudo test \"\$(stat -c %s '$swap_file')\" -eq $((swap_size_gib * 1024 * 1024 * 1024)) && sudo swapon --noheadings --raw --show=NAME | grep -Fxq '$swap_file' && test \"\$(sysctl -n vm.swappiness)\" -eq '$swappiness' && test ! -f /var/run/reboot-required"
+            "sudo test \"\$(stat -c %s '$swap_file')\" -eq $((swap_size_gib * 1024 * 1024 * 1024)) && sudo swapon --noheadings --raw --show=NAME | grep -Fxq '$swap_file' && test \"\$(sysctl -n vm.swappiness)\" -eq '$swappiness' && sudo systemctl is-active --quiet kernel-security.service && test \"\$(sysctl -n net.mptcp.enabled)\" -eq 0 && sudo nft list chain ip cg_kernel_guard prerouting >/dev/null && test ! -f /var/run/reboot-required"
 
           for port in 22 80 443; do
             if timeout 5 bash -c "</dev/tcp/$PUBLIC_IP/$port" 2>/dev/null; then
