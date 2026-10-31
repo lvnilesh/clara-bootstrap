@@ -25,6 +25,15 @@ the existing production Clara VM size and host memory policy:
 - swapfile: `/swapfile`, 2 GiB
 - swappiness: `10`
 
+Docker retention is declared in `etc/docker/daemon.json` and the
+`clara-docker-cleanup` systemd units. Containers default to three 10 MiB JSON
+log files. Existing containers need their service Compose definitions updated
+and redeployed to adopt log limits. Daily cleanup removes unused build cache
+older than seven days, retaining a 1 GB cache target; newer cache can exceed
+that target. It does not prune service images, containers, or volumes.
+Reconciliation preserves unrelated daemon settings and restarts Docker only
+when the declared defaults change.
+
 The `Reconcile Clara infrastructure` GitHub Actions workflow runs on the
 separate `actions-runner` VM. A push that changes the desired state, bootstrap,
 or host-policy scripts makes it:

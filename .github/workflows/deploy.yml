@@ -10,11 +10,15 @@ on:
       - scripts/reconcile-firewall.sh
       - scripts/reconcile-network.sh
       - scripts/reconcile-host.sh
+      - scripts/reconcile-docker.sh
       - scripts/resolve-desired-state.sh
+      - etc/docker/daemon.json
       - etc/fail2ban/jail.d/00-clara.conf
       - etc/ssh/sshd_config.d/99-clara-hardening.conf
       - etc/ssh/ssh_known_hosts
       - etc/systemd/system/clara-firewall.service
+      - etc/systemd/system/clara-docker-cleanup.service
+      - etc/systemd/system/clara-docker-cleanup.timer
       - .github/workflows/deploy.yml
   schedule:
     - cron: '*/30 * * * *'
@@ -87,7 +91,8 @@ jobs:
             (.host.swapSizeGiB | type == "number" and . > 0) and
             (.host.swappiness | type == "number" and . >= 0 and . <= 100)
           ' infrastructure/desired-state.json >/dev/null
-          bash -n scripts/configure-swap.sh scripts/reconcile-firewall.sh scripts/reconcile-host.sh scripts/reconcile-network.sh scripts/resolve-desired-state.sh
+          bash -n scripts/configure-swap.sh scripts/reconcile-firewall.sh scripts/reconcile-host.sh scripts/reconcile-docker.sh scripts/reconcile-network.sh scripts/resolve-desired-state.sh
+          jq -e '.["log-driver"] == "json-file" and .["log-opts"] == {"max-size": "10m", "max-file": "3"}' etc/docker/daemon.json >/dev/null
 
       - name: Resolve dynamic Cloudflare home IP in desired state
         env:
@@ -225,6 +230,17 @@ jobs:
             -i "$CLARA_SSH_KEY" \
             clara "sudo CLARA_DISABLED_UPDATE_MOTD_SCRIPTS='$disabled_update_motd_scripts' CLARA_MASKED_SYSTEMD_UNITS='$masked_systemd_units' bash -s" \
             < scripts/reconcile-host.sh
+
+      - name: Reconcile Docker retention
+        run: |
+          ssh_host=$(jq -r '.host.deploymentSshHost' infrastructure/desired-state.json)
+          tar -czf - scripts/reconcile-docker.sh etc/docker/daemon.json \
+            etc/systemd/system/clara-docker-cleanup.service \
+            etc/systemd/system/clara-docker-cleanup.timer | \
+            ssh -o HostName="$ssh_host" -o IdentitiesOnly=yes -i "$CLARA_SSH_KEY" \
+              clara 'sudo install -d -m 0755 /etc/clara-bootstrap/docker-policy && sudo tar -xzf - -C /etc/clara-bootstrap/docker-policy'
+          ssh -o HostName="$ssh_host" -o IdentitiesOnly=yes -i "$CLARA_SSH_KEY" \
+            clara 'sudo bash /etc/clara-bootstrap/docker-policy/scripts/reconcile-docker.sh /etc/clara-bootstrap/docker-policy'
 
       - name: Verify runner Clara SSH alias
         run: |
