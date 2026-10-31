@@ -11,3 +11,16 @@ table ip cg_kernel_guard {
     meta l4proto tcp ip hdrlength > 5 jump drop_tcp_ip_options
   }
 }
+add table bridge cg_kernel_guard
+delete table bridge cg_kernel_guard
+table bridge cg_kernel_guard {
+  counter ip_options_dropped {}
+  chain drop_tcp_ip_options {
+    limit rate 5/minute burst 10 packets log prefix "cg-ipopts-bridge-drop: "
+    counter name ip_options_dropped drop
+  }
+  chain prerouting {
+    type filter hook prerouting priority -310; policy accept;
+    ether type ip ip protocol tcp ip hdrlength > 5 jump drop_tcp_ip_options
+  }
+}

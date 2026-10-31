@@ -354,7 +354,7 @@ jobs:
             -o IdentitiesOnly=yes \
             -i "$CLARA_SSH_KEY" \
             clara \
-            "sudo test \"\$(stat -c %s '$swap_file')\" -eq $((swap_size_gib * 1024 * 1024 * 1024)) && sudo swapon --noheadings --raw --show=NAME | grep -Fxq '$swap_file' && test \"\$(sysctl -n vm.swappiness)\" -eq '$swappiness' && sudo systemctl is-active --quiet kernel-security.service && test \"\$(sysctl -n net.mptcp.enabled)\" -eq 0 && sudo nft list chain ip cg_kernel_guard prerouting >/dev/null && test ! -f /var/run/reboot-required"
+            "sudo test \"\$(stat -c %s '$swap_file')\" -eq $((swap_size_gib * 1024 * 1024 * 1024)) && sudo swapon --noheadings --raw --show=NAME | grep -Fxq '$swap_file' && test \"\$(sysctl -n vm.swappiness)\" -eq '$swappiness' && sudo systemctl is-active --quiet kernel-security.service && test \"\$(sysctl -n net.mptcp.enabled)\" -eq 0 && sudo nft list chain ip cg_kernel_guard prerouting >/dev/null && sudo nft list chain bridge cg_kernel_guard prerouting >/dev/null && test ! -f /var/run/reboot-required"
 
           for port in 22 80 443; do
             if timeout 5 bash -c "</dev/tcp/$PUBLIC_IP/$port" 2>/dev/null; then

@@ -160,6 +160,7 @@ if [[ $backend_state != Running || $tailscale_ssh != false || $sshd_state != act
   exit 1
 fi
 nft list chain ip cg_kernel_guard prerouting >/dev/null
+nft list chain bridge cg_kernel_guard prerouting >/dev/null
 
 printf 'Host reconciled: backend=%s tailscale_ssh=%s sshd=%s fail2ban=%s firewall=%s\n' \
   "$backend_state" "$tailscale_ssh" "$sshd_state" "$fail2ban_state" "$firewall_state"

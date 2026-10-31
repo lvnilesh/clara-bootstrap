@@ -13,6 +13,7 @@ done
 
 systemctl is-active --quiet kernel-security.service
 nft list chain ip cg_kernel_guard prerouting >/dev/null
+nft list chain bridge cg_kernel_guard prerouting >/dev/null
 
 jq -e '
   .host.firewall as $fw |
@@ -109,5 +110,6 @@ ufw status | grep -Fxq 'Status: active'
 iptables -C DOCKER-USER -j "$docker_chain"
 ip6tables -C DOCKER-USER -j "$docker_chain"
 nft list chain ip cg_kernel_guard prerouting >/dev/null
+nft list chain bridge cg_kernel_guard prerouting >/dev/null
 printf 'Host firewall reconciled: public=%s tailscale=%s udp=%s\n' \
   "$public_interface" "$tailscale_interface" "${public_udp_ports[*]}"

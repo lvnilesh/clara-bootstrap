@@ -63,6 +63,11 @@ allowlists. Logging is rate-limited separately from unconditional dropping;
 the `ip_options_dropped` counter counts all matches. Atomic reloads replace only
 this table, and stopping the service leaves the rules installed.
 
+A separate `bridge cg_kernel_guard` table applies the same IPv4 TCP option
+filter to traffic between containers on the same Linux bridge, even without
+`br_netfilter`. It preserves ordinary TCP and has its own drop counter and
+rate-limited log prefix. Both tables are checked by deployment verification.
+
 The persistent `net.mptcp.enabled=0` setting is supplementary mitigation for
 CVE-2026-98432. It is per network namespace and does not remove existing MPTCP
 listeners. Clara remains mitigated, not patched, until its verified Ubuntu/Azure
