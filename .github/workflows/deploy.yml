@@ -95,7 +95,6 @@ jobs:
             (.host.swappiness | type == "number" and . >= 0 and . <= 100)
           ' infrastructure/desired-state.json >/dev/null
           bash -n scripts/configure-swap.sh scripts/reconcile-firewall.sh scripts/reconcile-host.sh scripts/reconcile-docker.sh scripts/reconcile-network.sh scripts/resolve-desired-state.sh
-          sudo -n unshare --net nft --check --file etc/clara-bootstrap/kernel-security.nft
           jq -e '.["log-driver"] == "json-file" and .["log-opts"] == {"max-size": "10m", "max-file": "3"}' etc/docker/daemon.json >/dev/null
 
       - name: Resolve dynamic Cloudflare home IP in desired state
@@ -176,6 +175,17 @@ jobs:
             sleep 10
           done
           exit 1
+
+      - name: Validate native kernel packet guard
+        run: |
+          ssh_host=$(jq -r '.host.deploymentSshHost' infrastructure/desired-state.json)
+          ssh \
+            -o HostName="$ssh_host" \
+            -o IdentitiesOnly=yes \
+            -i "$CLARA_SSH_KEY" \
+            -o BatchMode=yes \
+            clara 'sudo -n /usr/sbin/nft --check --file /dev/stdin' \
+            < etc/clara-bootstrap/kernel-security.nft
 
       - name: Reconcile Clara host
         run: |
