@@ -80,7 +80,8 @@ jobs:
             (.host.firewall.publicInterface | test("^[A-Za-z0-9_.:-]+$")) and
             (.host.firewall.tailscaleInterface | test("^[A-Za-z0-9_.:-]+$")) and
             (.host.firewall.tailscaleTcpPorts == [22, 443]) and
-            (.host.firewall.publicUdpPorts == [21820, 51820]) and
+            (.host.firewall.publicUdpPorts == [21820, 51820, 30051]) and
+            (.azure.inboundRules | any(.name == "dstar-dcs-udp" and .protocol == "Udp" and .source == "*" and .destinationPorts == ["30051"])) and
             (.host.firewall.hostSourceTcpRules == [{"source": "172.19.0.0/16", "port": 443}]) and
             (.host.firewall.sourceTcpRules == [{"source": .cloudflare.homeHostname, "port": 1935}]) and
             (.host.disabledUpdateMotdScripts | type == "array") and

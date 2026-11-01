@@ -14,6 +14,13 @@
     },
     "inboundRules": [
       {
+        "name": "dstar-dcs-udp",
+        "priority": 210,
+        "protocol": "Udp",
+        "source": "*",
+        "destinationPorts": ["30051"]
+      },
+      {
         "name": "gerbil-udp",
         "priority": 200,
         "protocol": "Udp",
@@ -35,7 +42,7 @@
       "publicInterface": "eth0",
       "tailscaleInterface": "tailscale0",
       "tailscaleTcpPorts": [22, 443],
-      "publicUdpPorts": [21820, 51820],
+      "publicUdpPorts": [21820, 51820, 30051],
       "hostSourceTcpRules": [
         {
           "source": "172.19.0.0/16",
