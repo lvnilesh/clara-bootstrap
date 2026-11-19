@@ -54,6 +54,30 @@ Recovery copies are encrypted in the `mynix` repository as
 `secrets/clara-azure-credentials.json.age` and
 `secrets/clara-bootstrap-actions-ssh.age`. Never commit either plaintext.
 
+### Targeted nginx security update
+
+The manually dispatched **Patch Clara nginx** workflow is separate from VM
+reconciliation. It applies [USN-9159-1](https://ubuntu.com/security/notices/USN-9159-1)
+using Ubuntu's nginx `1.24.0-2ubuntu7.20` or a newer Noble security revision.
+It updates only already-installed packages from the nginx source, preserves
+configuration files, and refuses an APT plan that changes other packages.
+It does not upgrade the OS, resize the VM, or reboot it.
+
+The [policy helper](scripts/patch-nginx.py) keeps HTTP/2 disabled, verifies
+certificate-validated HTTP/1.1 at all nine public origins, and checks that the
+running master's executable matches the installed binary. The Ubuntu version
+banner alone does not establish backport status. nginx is restarted after
+package updates so updated modules are loaded, or when its master still uses
+the old executable. No other service is restarted by the helper. The workflow
+reuses the dedicated SSH identity above and serializes with infrastructure
+operations.
+
+Local policy tests (no SSH, APT changes, or live service restarts):
+
+```bash
+python3 -B -m unittest discover -s tests -p test_patch_nginx.py -v
+```
+
 ### Kernel packet guard
 
 The host workflow installs `kernel-security.service` before reconciling UFW.

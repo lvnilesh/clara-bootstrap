@@ -1,0 +1,66 @@
+name: Patch Clara nginx
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clara-infrastructure
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  patch-nginx:
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Test the nginx-only patch policy
+        run: nix shell github:NixOS/nixpkgs/2efa67fd26b6df417c33e4603185c701f260dd83#python3 --command python3 -B -m unittest discover -s tests -p test_patch_nginx.py -v
+
+      - name: Prepare dedicated Clara SSH identity
+        env:
+          CLARA_SSH_PRIVATE_KEY: ${{ secrets.CLARA_SSH_PRIVATE_KEY }}
+        run: |
+          set +x
+          : "${RUNNER_TEMP:?}" "${GITHUB_RUN_ID:?}"
+          ssh_key="$RUNNER_TEMP/clara-nginx-patch-$GITHUB_RUN_ID.key"
+          install -m 0600 /dev/null "$ssh_key"
+          printf '%s\n' "$CLARA_SSH_PRIVATE_KEY" > "$ssh_key"
+          ssh-keygen -y -f "$ssh_key" > "$ssh_key.pub"
+          expected=$(ssh-keygen -lf keys/clara-bootstrap-actions.pub | awk '{ print $2 }')
+          actual=$(ssh-keygen -lf "$ssh_key.pub" | awk '{ print $2 }')
+          if [[ $actual != "$expected" ]]; then
+            echo "Clara SSH identity does not match the declared public key" >&2
+            exit 1
+          fi
+          printf 'CLARA_SSH_KEY=%s\n' "$ssh_key" >> "$GITHUB_ENV"
+
+      - name: Apply only the nginx security update
+        run: |
+          ssh_host=$(jq -er '.host.deploymentSshHost' infrastructure/desired-state.json)
+          if [[ $ssh_host != *.ts.net ]]; then
+            echo "Invalid Clara SSH target" >&2
+            exit 1
+          fi
+          ssh \
+            -o HostName="$ssh_host" \
+            -o IdentitiesOnly=yes \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=10 \
+            -i "$CLARA_SSH_KEY" \
+            clara 'sudo -A python3 -' < scripts/patch-nginx.py
+
+      - name: Remove temporary SSH identity
+        if: always()
+        run: |
+          : "${RUNNER_TEMP:?}" "${GITHUB_RUN_ID:?}"
+          rm -f -- "$RUNNER_TEMP/clara-nginx-patch-$GITHUB_RUN_ID.key" \
+            "$RUNNER_TEMP/clara-nginx-patch-$GITHUB_RUN_ID.key.pub"
